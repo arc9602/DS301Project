@@ -1,12 +1,3 @@
-"""
-eda.py
-
-Exploratory Data Analysis + visualizations for the Super-SCOTUS dataset.
-Run AFTER extract_data.py has produced the extracted CSV.
-
-Usage:
-    python eda.py --input data/extracted.csv --output_dir figures/
-"""
 
 from pathlib import Path
 
@@ -17,7 +8,6 @@ import matplotlib.ticker as mticker
 import seaborn as sns
 from scipy import stats
 
-# ── style ─────────────────────────────────────────────────────────────────────
 sns.set_theme(style="whitegrid", palette="muted", font_scale=1.15)
 PALETTE = {"0": "#4C72B0", "1": "#DD8452"}
 FIG_DIR = Path("figures")
@@ -38,10 +28,8 @@ def save(fig, name):
     plt.close(fig)
 
 
-# ── individual plots ───────────────────────────────────────────────────────────
 
 def plot_label_distribution(df):
-    """How balanced is the vote label?"""
     counts = df["label"].value_counts().sort_index()
     fig, ax = plt.subplots(figsize=(6, 4))
     bars = ax.bar(["Side 0 (Respondent)", "Side 1 (Petitioner)"],
@@ -56,7 +44,6 @@ def plot_label_distribution(df):
 
 
 def plot_cases_per_year(df):
-    """How many cases (unique) per year?"""
     yearly = df.drop_duplicates("case_id").groupby("year").size()
     fig, ax = plt.subplots(figsize=(14, 4))
     ax.fill_between(yearly.index, yearly.values, alpha=0.3, color="#4C72B0")
@@ -69,7 +56,6 @@ def plot_cases_per_year(df):
 
 
 def plot_words_per_justice(df):
-    """Top 20 most talkative justices (median total words)."""
     med = (df.groupby("justice_id")["total_words"]
              .median()
              .sort_values(ascending=False)
@@ -83,10 +69,7 @@ def plot_words_per_justice(df):
 
 
 def plot_word_asymmetry_vs_vote(df):
-    """
-    Key predictive feature: do justices speak more words to the side they vote against?
-    word_ratio_0_to_1 > 1  → more words to side 0
-    """
+
     df2 = df.copy()
     df2["log_ratio"] = np.log1p(df2["word_ratio_0_to_1"])
     df2["vote_label"] = df2["label"].map({0: "Voted Side 0", 1: "Voted Side 1"})
@@ -115,7 +98,6 @@ def plot_word_asymmetry_vs_vote(df):
 
 
 def plot_question_asymmetry_vs_vote(df):
-    """Same analysis but for question counts."""
     df2 = df.copy()
     df2["log_q_ratio"] = np.log1p(df2["question_ratio_0_to_1"])
     df2["vote_label"] = df2["label"].map({0: "Voted Side 0", 1: "Voted Side 1"})
@@ -131,7 +113,6 @@ def plot_question_asymmetry_vs_vote(df):
 
 
 def plot_issue_area_distribution(df):
-    """What types of cases are in the dataset?"""
     cases = df.drop_duplicates("case_id").copy()
     cases["issue_label"] = cases["issue_area"].map(ISSUE_AREA_MAP).fillna("Unknown")
     counts = cases["issue_label"].value_counts()
@@ -145,7 +126,6 @@ def plot_issue_area_distribution(df):
 
 
 def plot_vote_rate_by_issue(df):
-    """Does the petitioner win more in certain issue areas?"""
     df2 = df.drop_duplicates("case_id").copy()
     df2["issue_label"] = df2["issue_area"].map(ISSUE_AREA_MAP).fillna("Unknown")
     df2["petitioner_won"] = (df2["win_side"] == 1).astype(int)
@@ -165,7 +145,6 @@ def plot_vote_rate_by_issue(df):
 
 
 def plot_utterance_length_distribution(df):
-    """Distribution of words-per-argument across justices."""
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.hist(df["total_words"].clip(upper=3000), bins=60,
             color="#4C72B0", edgecolor="white", linewidth=0.4)
@@ -180,10 +159,6 @@ def plot_utterance_length_distribution(df):
 
 
 def plot_justice_vote_heatmap(df):
-    """
-    Heatmap: for each justice, what fraction of the time do they vote side 1?
-    (Shows ideological leanings encoded in the data.)
-    """
     top_justices = (df.groupby("justice_id").size()
                       .sort_values(ascending=False)
                       .head(25).index)
@@ -203,7 +178,6 @@ def plot_justice_vote_heatmap(df):
 
 
 def plot_correlation_matrix(df):
-    """Correlation between numeric features and the label."""
     feat_cols = [
         "total_words", "total_utterances",
         "words_to_side0", "words_to_side1", "word_ratio_0_to_1",
@@ -222,7 +196,6 @@ def plot_correlation_matrix(df):
 
 
 def plot_words_over_time(df):
-    """Has oral argument become more or less verbal over time?"""
     yearly = df.groupby("year")["total_words"].median()
     fig, ax = plt.subplots(figsize=(13, 4))
     ax.plot(yearly.index, yearly.values, color="#4C72B0", linewidth=2)
@@ -234,9 +207,8 @@ def plot_words_over_time(df):
 
 
 def print_summary_stats(df):
-    print("\n" + "="*60)
+    print()
     print("DATASET SUMMARY")
-    print("="*60)
     print(f"Total (case × justice) rows : {len(df):,}")
     print(f"Unique cases                : {df['case_id'].nunique():,}")
     print(f"Unique justices             : {df['justice_id'].nunique():,}")
@@ -245,7 +217,6 @@ def print_summary_stats(df):
     print(f"\nMedian words per argument   : {df['total_words'].median():.0f}")
     print(f"Median utterances           : {df['total_utterances'].median():.0f}")
 
-    # point-biserial correlation of key features with label
     print("\nCorrelation with vote label (point-biserial r):")
     for col in ["word_ratio_0_to_1", "question_ratio_0_to_1",
                 "words_to_side0", "words_to_side1", "interruptions"]:
@@ -256,7 +227,6 @@ def print_summary_stats(df):
     print("="*60 + "\n")
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
 
 def main(input_path: str, output_dir: str):
     global FIG_DIR
@@ -266,7 +236,6 @@ def main(input_path: str, output_dir: str):
     df = pd.read_csv(input_path)
     print(f"Loaded {len(df):,} rows.")
 
-    # drop rows where justice did not vote (recused/absent, label == -1)
     before = len(df)
     df = df[df["label"] != -1].copy()
     dropped = before - len(df)
@@ -291,10 +260,8 @@ def main(input_path: str, output_dir: str):
     print(f"\nAll figures saved to {FIG_DIR}/")
 
 
-# ── SET YOUR PATHS HERE ──────────────────────────────────────────────────────
-INPUT_PATH  = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\extracted.csv"   # output from extract_data.py
-OUTPUT_DIR  = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\eda figures"          # folder to save plots into
-# ─────────────────────────────────────────────────────────────────────────────
+INPUT_PATH  = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\extracted.csv"   
+OUTPUT_DIR  = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\eda figures"        
 
 if __name__ == "__main__":
     main(INPUT_PATH, OUTPUT_DIR)
