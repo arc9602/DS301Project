@@ -1,26 +1,7 @@
-"""
-unpleasant_words_figure.py
 
-Recreates the Black et al. (2011) style marginal effects plot using
-VADER sentiment scores from score_sentiment.py.
-
-X-axis: unpleasant_diff = mean VADER negativity directed at petitioner
-                         MINUS mean VADER negativity directed at respondent
-         Positive = justice was more hostile toward petitioner's side
-         Negative = justice was more hostile toward respondent's side
-
-Run score_sentiment.py first to generate the sentiment CSV.
-
-Set the paths below, then run:
-    python unpleasant_words_figure.py
-"""
-
-# ── SET YOUR PATHS HERE ───────────────────────────────────────────────────────
-SENTIMENT_CSV = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\sentiment_scores.csv"   # from score_sentiment.py
-EXTRACTED_CSV = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\extracted.csv"          # from extract_data.py
+SENTIMENT_CSV = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\sentiment_scores.csv"   
+EXTRACTED_CSV = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\extracted.csv"          
 OUTPUT_PATH   = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\eda figures\unpleasant_words_figure_2.png"
-# ─────────────────────────────────────────────────────────────────────────────
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -40,27 +21,27 @@ def fit_and_sweep(data, feat_col, ctrl_cols, label_col, n_boot=500, panel_name="
     model = LogisticRegression(max_iter=1000, random_state=42)
     model.fit(X_scaled, y)
 
-    feat_vals         = sub[feat_col].values
-    sweep             = np.linspace(np.percentile(feat_vals, 5),
+    feat_vals = sub[feat_col].values
+    sweep = np.linspace(np.percentile(feat_vals, 5),
                                     np.percentile(feat_vals, 95), 200)
-    X_sweep_raw       = np.zeros((200, X_raw.shape[1]))
+    X_sweep_raw = np.zeros((200, X_raw.shape[1]))
     X_sweep_raw[:, 0] = sweep
-    X_sweep           = scaler.transform(X_sweep_raw)
-    probs             = model.predict_proba(X_sweep)[:, 1]
+    X_sweep = scaler.transform(X_sweep_raw)
+    probs = model.predict_proba(X_sweep)[:, 1]
 
     boot_probs = np.zeros((n_boot, 200))
-    rng        = np.random.default_rng(42)
+    rng = np.random.default_rng(42)
     print(f"  Bootstrapping '{panel_name}' ({n_boot} resamples)...", flush=True)
     for b in range(n_boot):
         idx = rng.integers(0, len(y), len(y))
-        m   = LogisticRegression(max_iter=300, random_state=0)
+        m = LogisticRegression(max_iter=300, random_state=0)
         try:
             m.fit(X_scaled[idx], y[idx])
             boot_probs[b] = m.predict_proba(X_sweep)[:, 1]
         except Exception:
             boot_probs[b] = probs
 
-    ci_low  = np.percentile(boot_probs, 2.5,  axis=0)
+    ci_low = np.percentile(boot_probs, 2.5,  axis=0)
     ci_high = np.percentile(boot_probs, 97.5, axis=0)
     return sweep, probs, ci_low, ci_high
 
@@ -78,10 +59,10 @@ def draw_panel(ax, sweep, probs, ci_low, ci_high, title):
     ax.set_ylim(0.25, 0.85)
     ax.axvline(x=0, color="black", linestyle=":", linewidth=1, alpha=0.5)
 
-    mid       = len(sweep) // 2
-    d_sweep   = sweep[mid + 5]  - sweep[mid - 5]
-    marginal  = (probs[mid+5]   - probs[mid-5])   / d_sweep
-    ci_m_low  = (ci_low[mid+5]  - ci_low[mid-5])  / d_sweep
+    mid = len(sweep) // 2
+    d_sweep = sweep[mid + 5]  - sweep[mid - 5]
+    marginal = (probs[mid+5]   - probs[mid-5])   / d_sweep
+    ci_m_low = (ci_low[mid+5]  - ci_low[mid-5])  / d_sweep
     ci_m_high = (ci_high[mid+5] - ci_high[mid-5]) / d_sweep
 
     ax.text(
