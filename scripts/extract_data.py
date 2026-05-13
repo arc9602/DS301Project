@@ -1,42 +1,19 @@
-"""
-extract_data.py
-
-Parses the Super-SCOTUS JSONL dataset and builds a clean dataframe
-where each row = one (case, justice) pair with:
-  - all justice utterances concatenated
-  - word counts directed at each side
-  - question counts per side
-  - metadata (year, issue area, court, etc.)
-  - label: votes_side (0 or 1)
-
-Just set INPUT_PATH and OUTPUT_PATH below, then run:
-    python extract_data.py
-"""
-
-# ── SET YOUR PATHS HERE ───────────────────────────────────────────────────────
-INPUT_PATH  = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\case_with_all_sources_with_companion_cases_tag.jsonl"   # path to the raw JSONL file
-OUTPUT_PATH = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\extracted.csv"  # where to save the output CSV
-# ─────────────────────────────────────────────────────────────────────────────
+INPUT_PATH  = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\case_with_all_sources_with_companion_cases_tag.jsonl"
+OUTPUT_PATH = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\DS301Project\data\extracted_labelled.csv"
 
 import json
 from pathlib import Path
 import pandas as pd
 from collections import defaultdict
 
-# ── helpers ──────────────────────────────────────────────────────────────────
 
-def is_question(text: str) -> bool:
-    """Rough heuristic: does this utterance contain a question?"""
+def is_question(text: str) -> bool: # to check if theres a question mark
     return "?" in text
 
 def word_count(text: str) -> int:
     return len(text.split())
 
-def count_interruptions(turns: list, speaker_id: str) -> int:
-    """
-    Count how many times a justice starts speaking mid-turn
-    (their start_time overlaps with the previous speaker's stop_time).
-    """
+def count_interruptions(turns: list, speaker_id: str) -> int: # to count interruptions
     interruptions = 0
     for i in range(1, len(turns)):
         prev = turns[i - 1]
@@ -51,47 +28,36 @@ def count_interruptions(turns: list, speaker_id: str) -> int:
             interruptions += 1
     return interruptions
 
-def extract_record(record: dict) -> list[dict]:
-    """
-    Given one case record, return a list of dicts — one per justice
-    who both spoke and has a votes_side label.
-    """
+def extract_record(record: dict) -> list[dict]: # to extract data from each record
     rows = []
 
-    case_id     = record.get("id", "")
-    year        = record.get("year")
-    court       = record.get("court", "")
-    win_side    = record.get("win_side")
+    case_id = record.get("id", "")
+    year = record.get("year")
+    court = record.get("court", "")
+    win_side = record.get("win_side")
 
-    # advocate side map: speaker_id -> side (0 or 1)
     advocate_side = {}
     for adv_id, adv_info in (record.get("advocates") or {}).items():
-        # normalise name to id format used in turns
-        norm_id = adv_id.lower().replace(" ", "_")
+        norm_id = adv_id.lower().replace(".", "").replace(" ", "_")
         advocate_side[norm_id] = adv_info.get("side")
 
-    # scdb metadata
     scdb = record.get("scdb_elements") or {}
-    issue_area          = scdb.get("issueArea")
-    decision_direction  = scdb.get("decisionDirection")
-    maj_votes           = scdb.get("majVotes")
-    min_votes           = scdb.get("minVotes")
+    issue_area = scdb.get("issueArea")
+    decision_direction = scdb.get("decisionDirection")
+    maj_votes = scdb.get("majVotes")
+    min_votes = scdb.get("minVotes")
 
-    # votes_side label per justice
     votes_side = {}
     convos = record.get("convos") or {}
 
-    # votes_side can be at top level OR inside convos
     if "votes_side" in record:
         votes_side = record["votes_side"]
     elif "votes_side" in convos:
         votes_side = convos["votes_side"]
 
     if not votes_side:
-        return rows   # no labels → skip
+        return rows
 
-    # flatten all turns across all transcripts
-    # the field is called "utterances" and is a list of lists (one per session)
     all_turns = []
     utterances = convos.get("utterances") or []
 
@@ -104,7 +70,6 @@ def extract_record(record: dict) -> list[dict]:
     if not all_turns:
         return rows
 
-    # build per-justice stats
     justice_stats = defaultdict(lambda: {
         "utterances": [],
         "words_to_side0": 0,
@@ -116,26 +81,28 @@ def extract_record(record: dict) -> list[dict]:
         "interruptions": 0,
     })
 
-    # figure out which side the *current* advocate is on for each turn
-    # by tracking who spoke last from the advocate pool
     current_adv_side = None
 
     for i, turn in enumerate(all_turns):
         spk = turn.get("speaker_id", "")
         text = turn.get("text", "") or ""
 
-        # if this is an advocate turn, update current side context
         if not spk.startswith("j__"):
-            norm = spk.lower().replace(" ", "_")
+            norm = spk.lower().replace(".", "").replace(" ", "_")
             if norm in advocate_side:
                 current_adv_side = advocate_side[norm]
             elif spk in advocate_side:
                 current_adv_side = advocate_side[spk]
-            continue  # don't record advocate turns as justice features
+            continue  
 
-        # it's a justice turn
         s = justice_stats[spk]
-        s["utterances"].append(text)
+        if current_adv_side == 0:
+            tagged_text = f"[SIDE0] {text}"
+        elif current_adv_side == 1:
+            tagged_text = f"[SIDE1] {text}"
+        else:
+            tagged_text = f"[UNKNOWN] {text}"
+        s["utterances"].append(tagged_text)
         s["total_words"] += word_count(text)
         s["total_utterances"] += 1
 
@@ -149,53 +116,47 @@ def extract_record(record: dict) -> list[dict]:
                 s["words_to_side1"] += wc
                 s["questions_to_side1"] += int(q)
 
-    # compute interruptions per justice over the full turn list
     for j_id in justice_stats:
         justice_stats[j_id]["interruptions"] = count_interruptions(all_turns, j_id)
 
-    # build one row per justice
     for j_id, stats in justice_stats.items():
         label = votes_side.get(j_id)
         if label is None:
-            continue  # justice spoke but no vote recorded
+            continue
 
         total_words = stats["total_words"] or 1  # avoid div/0
 
         rows.append({
-            "case_id":              case_id,
-            "year":                 year,
-            "court":                court,
-            "justice_id":           j_id,
-            "label":                int(label),        # 0 or 1  (which side they voted for)
-            "win_side":             win_side,
-            # text
-            "all_utterances":       " ||| ".join(stats["utterances"]),
-            # word-count features
-            "total_words":          stats["total_words"],
-            "total_utterances":     stats["total_utterances"],
-            "words_to_side0":       stats["words_to_side0"],
-            "words_to_side1":       stats["words_to_side1"],
-            "word_ratio_0_to_1":    stats["words_to_side0"] / (stats["words_to_side1"] + 1),
+            "case_id": case_id,
+            "year": year,
+            "court": court,
+            "justice_id": j_id,
+            "label": int(label),
+            "win_side": win_side,
+            "all_utterances": " ||| ".join(stats["utterances"]),
+            "total_words": stats["total_words"],
+            "total_utterances": stats["total_utterances"],
+            "words_to_side0": stats["words_to_side0"],
+            "words_to_side1": stats["words_to_side1"],
+            "word_ratio_0_to_1": stats["words_to_side0"] / (stats["words_to_side1"] + 1),
             # question features
-            "questions_to_side0":   stats["questions_to_side0"],
-            "questions_to_side1":   stats["questions_to_side1"],
-            "question_ratio_0_to_1":stats["questions_to_side0"] / (stats["questions_to_side1"] + 1),
+            "questions_to_side0": stats["questions_to_side0"],
+            "questions_to_side1": stats["questions_to_side1"],
+            "question_ratio_0_to_1": stats["questions_to_side0"] / (stats["questions_to_side1"] + 1),
             # interruptions
-            "interruptions":        stats["interruptions"],
+            "interruptions": stats["interruptions"],
             # metadata
-            "issue_area":           issue_area,
-            "decision_direction":   decision_direction,
-            "maj_votes":            maj_votes,
-            "min_votes":            min_votes,
+            "issue_area": issue_area,
+            "decision_direction": decision_direction,
+            "maj_votes": maj_votes,
+            "min_votes": min_votes,
         })
 
     return rows
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
 
 def diagnose(input_path):
-    """Print the structure of the first record to debug field names."""
     def summarise(obj, depth=0, max_depth=3):
         indent = "  " * depth
         if depth > max_depth:
@@ -226,15 +187,15 @@ def diagnose(input_path):
 
 
 def main(input_path: str, output_path: str):
-    input_path  = Path(input_path)
+    input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     diagnose(input_path)
 
     all_rows = []
-    skipped  = 0
-    parsed   = 0
+    skipped = 0
+    parsed = 0
 
     print(f"Reading {input_path} ...")
 

@@ -1,0 +1,5 @@
+data/full_df/train_df.csv
+data/extracted_labelled.csv
+scripts/app_scripts/__pycache__/
+__pycache__/
+*.pyc

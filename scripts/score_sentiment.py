@@ -1,28 +1,5 @@
-"""
-score_sentiment.py
-
-Scores each justice utterance for negative/unpleasant sentiment using VADER,
-then computes per-(case, justice) features:
-
-    unpleasant_to_petitioner  = mean VADER negativity directed at petitioner's counsel
-    unpleasant_to_respondent  = mean VADER negativity directed at respondent's counsel
-    unpleasant_diff           = unpleasant_to_petitioner - unpleasant_to_respondent
-                                (the x-axis in the Black et al. figure)
-
-This is saved as a new CSV that can be joined to extracted.csv on (case_id, justice_id).
-
-Before running:
-    pip install nltk
-    python -c "import nltk; nltk.download('vader_lexicon')"
-
-Set INPUT_PATH and OUTPUT_PATH below, then run:
-    python score_sentiment.py
-"""
-
-# ── SET YOUR PATHS HERE ───────────────────────────────────────────────────────
 INPUT_PATH  = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\case_with_all_sources_with_companion_cases_tag.jsonl"
 OUTPUT_PATH = r"C:\Users\adith\OneDrive\Desktop\Assignments\DS301\eda figures\sentiment_scores.csv"
-# ─────────────────────────────────────────────────────────────────────────────
 
 import json
 from pathlib import Path
@@ -35,28 +12,24 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 def score_record(record: dict, sia: SentimentIntensityAnalyzer) -> list[dict]:
     rows = []
 
-    case_id  = record.get("id", "")
+    case_id = record.get("id", "")
     win_side = record.get("win_side")
 
-    # advocate side map: speaker_id -> side (0=respondent, 1=petitioner)
     advocate_side = {}
     for adv_name, adv_info in (record.get("advocates") or {}).items():
         norm = adv_name.lower().replace(" ", "_")
         advocate_side[norm] = adv_info.get("side")
-        # also store by the id field directly
         adv_id = adv_info.get("id", "")
         if adv_id:
             advocate_side[adv_id] = adv_info.get("side")
 
-    # votes_side label per justice
     votes_side = record.get("votes_side") or {}
-    convos     = record.get("convos") or {}
+    convos = record.get("convos") or {}
     if not votes_side:
         votes_side = convos.get("votes_side") or {}
     if not votes_side:
         return rows
 
-    # flatten utterances
     all_turns = []
     for session in (convos.get("utterances") or []):
         if isinstance(session, list):
@@ -67,23 +40,15 @@ def score_record(record: dict, sia: SentimentIntensityAnalyzer) -> list[dict]:
     if not all_turns:
         return rows
 
-    # per-justice accumulators
-    # neg scores directed at petitioner (side 1) and respondent (side 0)
-    stats = defaultdict(lambda: {
-        "neg_to_petitioner": [],   # VADER neg scores when questioning petitioner's counsel
-        "neg_to_respondent": [],   # VADER neg scores when questioning respondent's counsel
-        "total_utterances": 0,
-    })
+    stats = defaultdict(lambda: {"neg_to_petitioner": [], "neg_to_respondent": [], "total_utterances": 0})
 
-    current_adv_side = None  # which side is currently being questioned
+    current_adv_side = None
 
     for turn in all_turns:
-        spk  = turn.get("speaker_id", "")
+        spk = turn.get("speaker_id", "")
         text = (turn.get("text") or "").strip()
         if not text:
             continue
-
-        # update current advocate side context
         if not spk.startswith("j__"):
             norm = spk.lower().replace(" ", "_")
             side = advocate_side.get(norm) or advocate_side.get(spk)
@@ -91,19 +56,17 @@ def score_record(record: dict, sia: SentimentIntensityAnalyzer) -> list[dict]:
                 current_adv_side = side
             continue
 
-        # justice utterance — score it
         scores = sia.polarity_scores(text)
-        neg    = scores["neg"]   # 0–1, fraction of text that is negative/unpleasant
+        neg = scores["neg"]
 
         s = stats[spk]
         s["total_utterances"] += 1
 
-        if current_adv_side == 1:          # questioning petitioner's counsel
+        if current_adv_side == 1:
             s["neg_to_petitioner"].append(neg)
-        elif current_adv_side == 0:        # questioning respondent's counsel
+        elif current_adv_side == 0:
             s["neg_to_respondent"].append(neg)
-
-    # build one row per justice
+            
     for j_id, s in stats.items():
         label = votes_side.get(j_id)
         if label is None:
@@ -115,25 +78,25 @@ def score_record(record: dict, sia: SentimentIntensityAnalyzer) -> list[dict]:
                    if s["neg_to_respondent"] else 0.0)
 
         rows.append({
-            "case_id":               case_id,
-            "justice_id":            j_id,
-            "label":                 int(label),
-            "win_side":              win_side,
-            "neg_to_petitioner":     neg_pet,
-            "neg_to_respondent":     neg_res,
-            # KEY FEATURE: positive = more unpleasant to petitioner
-            #              negative = more unpleasant to respondent
-            "unpleasant_diff":       neg_pet - neg_res,
-            "n_utt_to_petitioner":   len(s["neg_to_petitioner"]),
-            "n_utt_to_respondent":   len(s["neg_to_respondent"]),
-            "total_utterances":      s["total_utterances"],
+            "case_id": case_id,
+            "justice_id": j_id,
+            "label": int(label),
+            "win_side": win_side,
+            "neg_to_petitioner": neg_pet,
+            "neg_to_respondent": neg_res,
+            # positive = more unpleasant to petitioner
+            # negative = more unpleasant to respondent
+            "unpleasant_diff": neg_pet - neg_res,
+            "n_utt_to_petitioner": len(s["neg_to_petitioner"]),
+            "n_utt_to_respondent": len(s["neg_to_respondent"]),
+            "total_utterances": s["total_utterances"],
         })
 
     return rows
 
 
 def main():
-    input_path  = Path(INPUT_PATH)
+    input_path = Path(INPUT_PATH)
     output_path = Path(OUTPUT_PATH)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -141,10 +104,9 @@ def main():
     sia = SentimentIntensityAnalyzer()
 
     all_rows = []
-    parsed   = 0
-    skipped  = 0
+    parsed = 0
+    skipped = 0
 
-    # diagnose first record
     print("Diagnosing first record...")
     with open(input_path, "rb") as f:
         for _line in f:
@@ -179,7 +141,7 @@ def main():
                 continue
             try:
                 record = json.loads(raw_line)
-                rows   = score_record(record, sia)
+                rows = score_record(record, sia)
                 all_rows.extend(rows)
                 parsed += 1
             except json.JSONDecodeError as e:
@@ -192,7 +154,6 @@ def main():
 
     df = pd.DataFrame(all_rows)
 
-    # drop non-votes
     df = df[df["label"].isin([0, 1])].copy()
 
     print(f"\nDone. {parsed} cases, {len(df):,} rows.")

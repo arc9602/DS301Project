@@ -11,19 +11,18 @@ from sklearn.preprocessing import StandardScaler
 
 
 def fit_and_sweep(data, feat_col, ctrl_cols, label_col, n_boot=500, panel_name=""):
-    sub   = data[[feat_col] + ctrl_cols + [label_col]].dropna()
+    sub = data[[feat_col] + ctrl_cols + [label_col]].dropna()
     X_raw = sub[[feat_col] + ctrl_cols].values
-    y     = sub[label_col].values
+    y = sub[label_col].values
 
-    scaler   = StandardScaler()
+    scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_raw)
 
     model = LogisticRegression(max_iter=1000, random_state=42)
     model.fit(X_scaled, y)
 
     feat_vals = sub[feat_col].values
-    sweep = np.linspace(np.percentile(feat_vals, 5),
-                                    np.percentile(feat_vals, 95), 200)
+    sweep = np.linspace(np.percentile(feat_vals, 5), np.percentile(feat_vals, 95), 200)
     X_sweep_raw = np.zeros((200, X_raw.shape[1]))
     X_sweep_raw[:, 0] = sweep
     X_sweep = scaler.transform(X_sweep_raw)
@@ -41,7 +40,7 @@ def fit_and_sweep(data, feat_col, ctrl_cols, label_col, n_boot=500, panel_name="
         except Exception:
             boot_probs[b] = probs
 
-    ci_low = np.percentile(boot_probs, 2.5,  axis=0)
+    ci_low = np.percentile(boot_probs, 2.5, axis=0)
     ci_high = np.percentile(boot_probs, 97.5, axis=0)
     return sweep, probs, ci_low, ci_high
 
@@ -60,9 +59,9 @@ def draw_panel(ax, sweep, probs, ci_low, ci_high, title):
     ax.axvline(x=0, color="black", linestyle=":", linewidth=1, alpha=0.5)
 
     mid = len(sweep) // 2
-    d_sweep = sweep[mid + 5]  - sweep[mid - 5]
-    marginal = (probs[mid+5]   - probs[mid-5])   / d_sweep
-    ci_m_low = (ci_low[mid+5]  - ci_low[mid-5])  / d_sweep
+    d_sweep = sweep[mid + 5] - sweep[mid - 5]
+    marginal = (probs[mid+5] - probs[mid-5]) / d_sweep
+    ci_m_low = (ci_low[mid+5] - ci_low[mid-5]) / d_sweep
     ci_m_high = (ci_high[mid+5] - ci_high[mid-5]) / d_sweep
 
     ax.text(
@@ -93,7 +92,6 @@ def main():
                  (df["n_utt_to_respondent"] > 0)].copy()
     print(f"Rows where justice questioned both sides: {len(df_both):,}")
 
-    # case-level (left panel)
     case_df = (
         df_both.groupby("case_id")
                .agg(
@@ -109,14 +107,10 @@ def main():
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
-    sweep, probs, ci_low, ci_high = fit_and_sweep(
-        case_df, "unpleasant_diff", ["neg_to_pet", "neg_to_res"],
-        "label", panel_name="Court Outcome")
+    sweep, probs, ci_low, ci_high = fit_and_sweep(case_df, "unpleasant_diff", ["neg_to_pet", "neg_to_res"], "label", panel_name="Court Outcome")
     draw_panel(axes[0], sweep, probs, ci_low, ci_high, "Court Outcome")
 
-    sweep, probs, ci_low, ci_high = fit_and_sweep(
-        df_both, "unpleasant_diff", ["neg_to_petitioner", "neg_to_respondent"],
-        "label", panel_name="Justice Votes")
+    sweep, probs, ci_low, ci_high = fit_and_sweep(df_both, "unpleasant_diff", ["neg_to_petitioner", "neg_to_respondent"], "label", panel_name="Justice Votes")
     draw_panel(axes[1], sweep, probs, ci_low, ci_high, "Justice Votes")
 
     fig.suptitle(
